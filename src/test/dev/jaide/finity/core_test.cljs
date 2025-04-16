@@ -1,8 +1,8 @@
-(ns dev.jaide.valkyrie.core-test
+(ns dev.jaide.finity.core-test
   (:require
    [clojure.pprint :refer [pprint]]
    [clojure.test :refer [async deftest testing is]]
-   [dev.jaide.valkyrie.core :as fsm]
+   [dev.jaide.finity.core :as fsm]
    [dev.jaide.valhalla.core :as v]))
 
 (deftest create-test
@@ -320,9 +320,9 @@
         (is (thrown? :default (fsm/dispatch fsm {:type :complete :data {}})))
         (let [state @fsm]
           (is (= (count @transactions) 1))
-          (is (= (:value state) :dev.jaide.valkyrie.core/destroyed))
+          (is (= (:value state) :dev.jaide.finity.core/destroyed))
           (is (= (:context state) {}))
-          (is (= (:effect state) :dev.jaide.valkyrie.core/destroyed)))))))
+          (is (= (:effect state) :dev.jaide.finity.core/destroyed)))))))
 
 (defn create-counter-fsm
   []

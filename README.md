@@ -1,23 +1,23 @@
-# Valkyrie
+# Finity
 
 <p align="center">
-  <img src="./doc/valkyrie-logo.svg" alt="Valkyrie Logo" />
+  <img src="./doc/finity-logo.svg" alt="finity Logo" />
 </p>
 
-A ClojureScript Finite State Machine library compatible with many state management tools. Valkyrie provides a robust toolkit to model application state transitions with validation, side effects, and a clean API.
+A ClojureScript Finite State Machine library. Finity provides a robust toolkit to model application state transitions with validation, side effects, and a clean API. It also provides an IStateMachine protocol to implement adapters for other state libraries but `atom-fsm` is provided.
 
 ## Installation
 
 ### deps.edn / Babashka
 
 ```clojure
-{:deps {dev.jaide/valkyrie {:mvn/version "2025.4.15"}}}
+{:deps {dev.jaide/finity {:mvn/version "2025.4.15"}}}
 ```
 
 ### Leiningen / Boot
 
 ```clojure
-[dev.jaide/valkyrie "2025.4.15"]
+[dev.jaide/finity "2025.4.15"]
 ```
 
 ## Why another FSM library?
@@ -36,7 +36,7 @@ Note that any API that handles validation is expecting a hash-map mapping keys t
 
 ## Usage
 
-Valkyrie provides a simple yet powerful API for defining and using finite state machines in your ClojureScript applications.
+Finity provides a simple yet powerful API for defining and using finite state machines in your ClojureScript applications.
 
 ### Defining a FSM Spec
 
@@ -44,7 +44,7 @@ First, create a specification for your state machine:
 
 ```clojure
 (require
- '[dev.jaide.valkyrie.core :as fsm]
+ '[dev.jaide.finity.core :as fsm]
  '[dev.jaide.valhalla.core :as v])
 
 (def fsm-spec (fsm/create :my-machine))
@@ -288,7 +288,7 @@ Properly dispose of the machine when done:
 
 ## Implementing Adapters
 
-Valkyrie is designed to be adaptable to different state management systems. You can implement your own adapters by following the `IStateMachine` protocol:
+Finity is designed to be adaptable to different state management systems. You can implement your own adapters by following the `IStateMachine` protocol:
 
 ### Get
 
@@ -331,7 +331,7 @@ Look at the atom-fsm example in core.cljs for how to implement an adapter.
 
 ## Visualizing State Machines
 
-Valkyrie provides a way to generate Mermaid diagrams from your state machines:
+Finity provides a way to generate Mermaid diagrams from your state machines:
 
 ```clojure
 (println (fsm/spec->diagram fsm-spec))

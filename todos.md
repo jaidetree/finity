@@ -2,8 +2,8 @@
 
 ## 1. Getting Started
 
-- [x] Create src/main/dev/jaide/valkyrie/core.cljs
-- [x] Create src/test/dev/jaide/valkyrie/core_test.cljs
+- [x] Create src/main/dev/jaide/finity/core.cljs
+- [x] Create src/test/dev/jaide/finity/core_test.cljs
 - [x] Create shadow-cljs.edn
 - [x] Create package.json
 

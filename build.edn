@@ -1,4 +1,4 @@
-{:lib dev.jaide/valkyrie
+{:lib dev.jaide/finity
  :version "2025.4.15-SNAPSHOT"
  :source-dirs ["src/main"]
  :licenses [{:name "GPL-3.0"

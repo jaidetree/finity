@@ -41,7 +41,7 @@ git tag -a "$1" -m "Prepare release $1"
 echo -e "\nPushing git tag and main branch"
 git push origin main "$1" --force-with-lease
 
-NEW_RELEASE_URL="https://github.com/jaidetree/valkyrie/releases/new?tag=$1&title=$1"
+NEW_RELEASE_URL="https://github.com/jaidetree/finity/releases/new?tag=$1&title=$1"
 
 echo -e "\n$NEW_RELEASE_URL\n"
 

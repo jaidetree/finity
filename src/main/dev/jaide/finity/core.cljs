@@ -1,4 +1,4 @@
-(ns dev.jaide.valkyrie.core
+(ns dev.jaide.finity.core
   (:refer-clojure :exclude [])
   (:require
    [clojure.core :as cc]
@@ -430,7 +430,7 @@
   Arguments:
   - fsm - A FiniteStateMachine instance implementing the IStateMachine protocol
   
-  Returns boolean, true if the state is :dev.jaide.valkyrie.core/destroyed"
+  Returns boolean, true if the state is :dev.jaide.finity.core/destroyed"
   [fsm]
   (= (get @fsm :value) ::destroyed))
 
