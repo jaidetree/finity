@@ -1,7 +1,7 @@
 # Finity
 
 <p align="center">
-  <img src="./doc/finity-logo.svg" alt="finity Logo" />
+  <img src="./doc/finity-logo.svg" alt="Finity Logo" />
 </p>
 
 A ClojureScript Finite State Machine library. Finity provides a robust toolkit to model application state transitions with validation, side effects, and a clean API. It also provides an IStateMachine protocol to implement adapters for other state libraries but `atom-fsm` is provided.
