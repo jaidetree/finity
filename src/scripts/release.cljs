@@ -1,8 +1,10 @@
 (ns scripts.release
   (:require
    [clojure.string :as s]
+   [promesa.core :as p]
    ["child_process" :as cp]
-   ["fs" :as fs]))
+   ["fs" :as fs]
+   ["readline" :as readline]))
 
 (def repo-url "https://github.com/jaidetree/finity")
 
@@ -17,7 +19,10 @@
   []
   (println "\nUSAGE:
   nbb -m scripts.release version YYYY.M.D
-  nbb -m scripts.release prepare YYYY.M.D")
+    Update the version string across known files
+
+  nbb -m scripts.release create YYYY.M.D
+    Checkout main, update the version, commit changes, create tag, push to origin")
   (exit 1))
 
 (def date-pattern #"[\d]{4}\.(?!0)[\d]{1,2}\.(?!0)[\d]{1,2}")
@@ -53,11 +58,11 @@
     (assert-date date)
     (doseq [file files]
       (let [contents (slurp file)
-            version (if (contains? snapshot-files file)
+            version (if (and suffix (contains? snapshot-files file))
                       (str date "-" (s/upper-case (or suffix "")))
                       date)]
         (spit file (s/replace contents version-pattern version))))
-    (println "Update version to" (if suffix (str date "-" suffix) date))))
+    (println "Updated version to" (if suffix (str date "-" suffix) date))))
 
 (defn flatten-args
   [args]
@@ -83,6 +88,13 @@
   (parse-args ["git commit -m" "\"my message\"" "branch --HEAD" {:stdio ["inherit" "inherit" "inherit"]}]))
 
 (defn $
+  "A helper for running shell commands synchronously
+
+  Arguments:
+  - & args - Variadic strings can be space separated, separate strings, strings
+             that begin with \" will be treated as a single argument
+
+  Returns a hash-map with the status, signal, stdout, and stderr strings"
   [& args]
   (let [[cmd args opts] (parse-args args)
         result (.spawnSync cp
@@ -95,76 +107,110 @@
                                 opts)
                                (clj->js)))]
 
-    (println cmd (s/join " " args))
+    #_(println cmd (s/join " " args))
 
     {:status (.-status result)
      :signal (.-signal result)
-     :output (js->clj (.-output result))
      :stdout (.-stdout result)
      :stderr (.-stderr result)}))
 
-(defn lines
+(defn- lines
   [s]
   (->> (s/split s #"\n")
        (filter #(not (s/blank? %)))))
 
-(defn uncommitted-files
+(defn- squote
+  [& s]
+  (str "\"" (s/join "" s) "\""))
+
+(defn- uncommitted-files
+  "Get list of modified but uncommitted files from git
+
+  Returns nil or a sequence of files"
   []
   (let [{:keys [stdout] :as result} ($ "git diff-index --name-status HEAD")
         files (->> (s/trim stdout)
                    (lines))]
-    (println (prn-str files))
     (if (zero? (count files))
       nil
       files)))
 
-(defn read
-  [prompt & [default]]
-  (let [result ($ "read -p" (str "\"" prompt ": \"")
-                  {:stdio ["inherit" "pipe" "pipe"]})]
-    (get result :output default)))
+(defn- create-rl
+  []
+  (.createInterface
+   readline
+   #js {:input js/process.stdin
+        :output js/process.stdout}))
 
-(defn prepare-release
-  [date & _args]
-  (try
-    (assert-date date)
-    (let [[date _suffix] (s/split date #"-")
-          release-url (str repo-url "/releases/new?tag=" date "&title=" date)]
+(defn read
+  "Read a line of input from the user
+
+  Arguments:
+  - prompt - A string like (Y/n) [n]
+  - [default] - Optional value to return if no input was provided
+
+  Returns a promise that yields the user input"
+  [prompt & [default]]
+  (let [rl (create-rl)]
+    (p/create
+     (fn [resolve _reject]
+       (.question rl (str prompt ": ")
+                  (fn [input]
+                    (let [input (s/trim input)]
+                      (.close rl)
+                      (resolve
+                       (if (s/blank? input)
+                         default
+                         input)))))))))
+
+(defn create-release
+  "Prepares a release and generates the URL to draft the release tag
+
+  Arguments:
+
+  - date-version - YYYY.M.D format string representing the release version
+
+  Returns a promise that yields nil "
+  [date-version & _args]
+  (assert-date date-version)
+  (let [date-version (s/upper-case date-version)
+        release-url (str repo-url "/releases/new?tag=" date-version "&title=" date-version)]
+    (p/do
       (println "\nCheckout main branch")
       ($ "git checkout main")
 
       (when-let [files (uncommitted-files)]
-        (println "Error: Working directory is not clean")
+        (println "\nError: Working directory is not clean")
         (println (->> files
                       (s/join "\n")))
         (exit 1))
 
-      (println "\nUpdating version to" date)
-      (update-version date)
+      (println "\nUpdating version to" date-version)
+      (update-version date-version)
 
       (when-not (uncommitted-files)
         (println "Error: No files were modified")
         (exit 1))
 
       ($ "git add" (s/join " " files))
-      ($ "git commit -m" (str "\"chore: Update version to " date "\""))
+      ($ "git commit -m" (squote "chore: Update version to " date-version))
 
       (println "\nCreating git tag")
-      ($ "git tag -a" (str "\"" date "\"") "-m" (str "\"Prepare release" date "\""))
+      ($ "git tag -a" (squote date-version) "-m" (squote "Prepare release " date-version))
 
-      (println "\nPushing git tag and main branch")
-      ($ "git push origin main" date "--force-with-lease")
+      (println "\nPushing git tag and main branch\n")
+      ($ "git push origin main" date-version "--force-with-lease"
+         {:stdio "inherit"})
 
-      (println "\n" release-url)
+      (println "")
+      (println release-url)
 
-      (println "Open release page in browser?")
-      (let [input (read "(Y/n) [n]" "n")]
+      (println "\nOpen release page in browser?")
+      (p/let [input (read "(Y/n) [n]" "n")]
         (when (s/starts-with? (s/lower-case input) "y")
-          ($ "open" release-url {:stdio ["inherit" "inherit" "inherit"]}))))
-
-    (catch :default error
-      (println (.-message error))
-      (exit 1))))
+          ($ "open" (squote release-url)
+             {:stdio "inherit"}))
+        nil))))
 
 (defn -main
   "Updates the version string across files. Only includes -SNAPSHOT suffix in
@@ -178,14 +224,15 @@
   nbb -m scripts.version 2025.04.16-SNAPSHOT"
   [subcmd & args]
   (try
-    (case (s/lower-case subcmd)
-      "help" (help)
+    (p/do
+      (case (s/lower-case subcmd)
+        "help" (help)
 
-      "version" (apply update-version args)
+        "version" (apply update-version args)
 
-      "prepare" (apply prepare-release args)
+        "create" (apply create-release args)
 
-      (help))
+        (help)))
     (catch :default error
       (println (.-message error))
       (help))))
