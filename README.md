@@ -22,13 +22,13 @@ A ClojureScript Finite State Machine library. Finity provides a robust toolkit t
 
 ## Why another FSM library?
 
-When it comes to frontend projects, a positive virtue of languages like ReScript or TypeScript is a strong sense of correctness and confidence in your data. Finite State Machines provide a strong sense of confidence in system behavior leading to a more satisfying and productive development experience.
+While I mostly prefer Clojure, I do admire the sense of correctness and confidence languages like ReScript and TypeScript can provide. This library is an effort to improve the ClojureScript frontend developer experience by using finite-state-machines to validate behavior and my validator library [Valhalla](https://github.com/jaidetree/valhalla) to parse and enforce state correctness. It aims to achieve a pleasant balance between having certainty in the data and state of the system without losing the raw development speed and flexibility of ClojureScript.
 
 While there are other FSM libraries targeting ClojureScript, I felt there were a few key shortcomings I wanted to address:
 
 1. Most states and transitions are not validated, which can lead to extra time debugging what went wrong.
-2. Context data is important for building real applications and storing request data, selected ids, drag coordinates, etc...
-3. Effect support is important so that FSMs can do real work such as making requests, starting timers, and setting event listeners while still making it easy to reuse between states.
+2. Includes extra context data with the state, which is also validated, to support storing real-world data such as mouse event coordinates, request data, selected ids, and other tertiary state.
+3. Manage effects for complex interactions such as request promises, event listeners, and timers
 
 ## Validation
 

@@ -1,5 +1,6 @@
 {:lib dev.jaide/finity
  :version "2025.4.16-SNAPSHOT"
+ :description "A ClojureScript Finite State Machine library focused on correctness and adaptability in modern stacks"
  :source-dirs ["src/main"]
  :licenses [{:name "GPL-3.0"
              :url "https://www.gnu.org/licenses/agpl-3.0.txt"}]}
