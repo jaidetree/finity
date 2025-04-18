@@ -134,6 +134,51 @@ Define how states transition in response to actions:
 (fsm/initial fsm-spec :idle)
 ```
 
+### Define
+
+Sometimes it may be more convenient to define the state machine in a single
+function call supplying a large hash-map. One use case could be trying to use
+`defonce` to only generate the spec once in a module.
+
+The define function works like the following:
+
+```clojure
+(def fsm-spec
+  (fsm/define
+    {:id :define-test-fsm
+     :state   {:value :idle
+               :context {}
+               ;; For example if wanting to start with an effect running
+               :effect {:id :fetch
+                        :url "/api/tasks"}}
+
+     :states  {:idle {}
+             :loading {:url (v/string)}
+             :fulfilled {:data (v/hash-map (v/string) (v/string))}}
+
+     :actions {:fetch {:url (v/string)}
+             :fetched {:data (v/hash-map (v/string) (v/string))}
+             :reset {}
+             :error {:error (v/instance js/Error)}}
+
+     :effects {:fetch [{:url (v/string)}
+                       (fn [{:keys [dispatch effect]}]
+                         (-> (js/fetch (:url effect))
+                             (.then #(.json %))
+                             (.then #(dispatch {:type :fetched :data %}))
+                             (.catch #(dispatch {:type :error :error %}))))]}
+     :transitions
+     [{:from [:idle]
+       :actions [:fetch]
+       :to [:loading]
+      :do (fn [state action]
+           {:value :loading
+            :context {:url (:url action)}
+            :effect {:id :fetch :url (:url action)}})}]}))
+```
+
+From there the return value, a spec atom may be used to create an instance of the machine.
+
 ### Creating an Atom Instance
 
 Create a state machine instance:

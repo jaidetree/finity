@@ -5,6 +5,7 @@
    [clojure.string :as s]
    [cljs.core :refer [IDeref ILookup]]
    [dev.jaide.valhalla.core :as v]
+   [dev.jaide.finity.validators :refer [define-validator]]
    [clojure.pprint :refer [pprint]]))
 
 (defn create
@@ -12,10 +13,10 @@
   Arguments:
   - id - Keyword used to identify the FSM-spec
   - opts - Optional options hash-map
-  
+
   Options:
   - :atom - A function to instantiate an atom. For example reagent.core/ratom
-  
+
   Returns an atom containing an empty fsm-spec hash-map"
   [id & {:keys [atom] :as opts
          :or {atom atom}}]
@@ -33,10 +34,10 @@
 
 (defn fsm?
   "Determines if a possible fsm-spec-atom is likely an fsm-spec
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
-  
+
   Returns true if the argument is an atom with the :fsm/id property"
   [fsm-spec-ref]
   (contains? @fsm-spec-ref :fsm/id))
@@ -54,13 +55,13 @@
 
 (defn state
   "Defines a valid state and context validator
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - id - Keyword identifying the unique state for example :idle
   - context-validator-map - An optional hash-map of context keywords to
                             valhalla compatible validation functions
-  
+
   Returns the fsm-spec-ref atom with a state validator defined
   "
   [fsm-spec-ref id & [context-validator-map]]
@@ -86,13 +87,13 @@
 
 (defn action
   "Defines a valid action and validator
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - id - Keyword identifying the unique action for example :fetch
   - validator-hash-map - An optional hash-map of action keywords to
                          valhalla compatible validation functions
-  
+
   Returns the fsm-spec-ref atom with an action validator defined"
   [fsm-spec-ref id & [validator-map]]
   (assert-fsm-spec fsm-spec-ref)
@@ -112,7 +113,7 @@
 
 (defn effect
   "Defines a valid effect and validator
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - id - Keyword identifying the unique effect for example :start-timer
@@ -127,7 +128,7 @@
 
   The handler can optionally return a function to cleanup the side-effect such
   as removing a DOM listener.
-  
+
   Returns the fsm-spec-ref atom with an effect validator defined"
   ([fsm-spec-ref id handler]
    (effect fsm-spec-ref id nil handler))
@@ -157,18 +158,18 @@
 
 (defn transition
   "Define a transition function between states from actions
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - transition-map - A hash-map combining states, actions, and to states
-  - f-or-kw - A transition function that receives the current state and the 
+  - f-or-kw - A transition function that receives the current state and the
               action or keyword representing.
-  
+
   Transition Map:
   - :from - Vector of state keywords to transition from
   - :actions - Vector of keywords representing the :type keyword of actions
   - :to - Vector of possible destination states
-  
+
   Returns the fsm-spec-ref atom with a transition function defined"
   [fsm-spec-ref {:keys [from actions to]} f-or-kw]
   (assert-fsm-spec fsm-spec-ref)
@@ -190,13 +191,13 @@
     fsm-spec-ref))
 
 (defn assert-state
-  "Assert a state matches a defined state and passes validation. 
+  "Assert a state matches a defined state and passes validation.
   Mostly intended for internal use or implementing other state adapters.
-  
+
   Arguments:
   - fsm-spec - An fsm-spec hash-map already derefed
   - state - A hash-map with :value keyword and :context hash-map
-  
+
   Returns the parsed output of the state validator
   "
   [fsm-spec state]
@@ -212,13 +213,13 @@
                            (pr-str state))))))
 
 (defn assert-effect
-  "Assert an effect matches a defined effect and passes validation. 
+  "Assert an effect matches a defined effect and passes validation.
   Mostly intended for internal use or implementing other state adapters.
-  
+
   Arguments:
   - fsm-spec - An fsm-spec hash-map already derefed
   - effect - A hash-map with :id keyword and arg attrs
-  
+
   Returns the parsed output of the effect validator
   "
   [fsm-spec effect]
@@ -236,11 +237,11 @@
 (defn initial
   "Set default initial state of fsm spec. Can be overwritten in atom-fsm
   function. Must be called after states are defined as state will be validated.
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - state - A state hashmap with :value and :context attrs or value keyword
-  
+
   Returns the fsm-spec-ref atom for chaining"
   [fsm-spec-ref state]
   (let [fsm-spec @fsm-spec-ref
@@ -250,6 +251,81 @@
     (swap! fsm-spec-ref assoc :initial state)
     fsm-spec-ref))
 
+(defn- define-states
+  [fsm-spec-ref states]
+  (doseq [[id validator-map] states]
+    (if (= validator-map {})
+      (state fsm-spec-ref id)
+      (state fsm-spec-ref id validator-map)))
+  fsm-spec-ref)
+
+(defn- define-actions
+  [fsm-spec-ref actions]
+  (doseq [[id validator-map] actions]
+    (if (= validator-map {})
+      (action fsm-spec-ref id)
+      (action fsm-spec-ref id validator-map)))
+  fsm-spec-ref)
+
+(defn- define-effects
+  [fsm-spec-ref effects]
+  (doseq [[id [validator-map handler]] effects]
+    (if (= validator-map {})
+      (effect fsm-spec-ref id handler)
+      (effect fsm-spec-ref id validator-map handler)))
+  fsm-spec-ref)
+
+(defn- define-transitions
+  [fsm-spec-ref transitions]
+  (doseq [tin-spec transitions]
+    (if (keyword? (:to transition))
+      (transition fsm-spec-ref (dissoc tin-spec :to) (:to transition))
+      (transition fsm-spec-ref (dissoc tin-spec :do) (:do transition))))
+  fsm-spec-ref)
+
+(defn define
+  "Defines a whole fsm-spec in a single call. Requires all states, actions,
+  effects, and transitions but more can be added after.
+  
+  Arguments:
+  - spec - A hash-map describing the state-machine spec
+  
+  Example:
+  (fsm/define
+    {:id :traffic
+     :state {:value :green}
+     :states {:green {} ;; hash-map is a map of validators
+              :red {}
+              :yellow {}}
+     :actions {:change {}} ;; hash-map is a map of validators
+     
+     :effects {:wait [{:delay (v/number)}
+                      (fn [] ...)}
+     :transitions
+     [{:from [:red]
+       :actions [:change]
+       :to [:green] ;; vector requires :do function
+       :do (fn [state action]
+             {:value :green
+              :effect {:id :wait :delay 60_000})}}
+      {:from [:green]
+       :actions [:change]
+       :to :yellow} ;; Does not support effects
+      {:from [:yellow]
+       :actions [:change]
+       :to :red}]}) 
+
+  Returns fsm-spec-ref atom, similar to `(create ...)`
+  "
+  [spec]
+  (let [{spec :output} (v/assert-valid define-validator spec)]
+    (-> (create (:id spec))
+        (define-states (:states spec))
+        (define-actions (:actions spec))
+        (define-effects (:effects spec))
+        (define-transitions (:transitions spec))
+        (initial (:state spec)))))
+
 (defn init
   "Validate an initial state, context, and effect. Intended for internal use
   or implementing new state adapters.
@@ -257,9 +333,9 @@
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - state - A hash-map with :value state keyword and optional :context attr
-  - effect - Effect hash-map with :id and arg attrs, needs to match defined 
+  - effect - Effect hash-map with :id and arg attrs, needs to match defined
              effect validator
-  
+
   Returns state hash-map with :value, :context, and :effect keys
   "
   [fsm-spec-ref state & [effect]]
@@ -311,9 +387,9 @@
      :at (js/Date.now)}))
 
 (defn prev-state->next-state
-  "Perform a defined transition from one state to another with an action. 
+  "Perform a defined transition from one state to another with an action.
   Intended for internal use or implementing state adapters
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - prev-state - A hash-map with :value, :context, and :effect keys
@@ -333,17 +409,17 @@
   adapters for different state systems such as streams, reagent atoms, or
   other state management libraries.
 
-  It is also important to implement cljs.core/IDeref -deref and 
+  It is also important to implement cljs.core/IDeref -deref and
   cljs.core/ILookup -lookup methods to add support for deref syntax and common
   get and get-in functions.
   "
   (internal-state
     [machine]
     "Intended for internal use or debugging.
-    
+
     Arguments:
     - fsm - Instance of a FSM implementing the IStateMachine protocol
-    
+
     Returns internal state hash-map including the state, cleanup-effect,
     and subscriptions")
   (dispatch
@@ -362,25 +438,25 @@
   (subscribe
     [machine listener]
     "Add a listener function to receive transition hash-maps
-    
+
     Arguments:
     - fsm - Instance of a FSM implementing the IStateMachine protocol
     - listener - A function that accepts transition hash-maps
-    
+
     Returns a function to unsubscribe the listener from future transitions")
   (destroy
     [machine]
-    "Remove all subscriptions, clears any stored state, and stops any running 
+    "Remove all subscriptions, clears any stored state, and stops any running
      effects.
-    
+
     Arguments:
     - fsm - Instance of a FSM implementing the IStateMachine protocol
-    
+
     Returns nil"))
 
 (defn run-effect!
   "Given a transition, cancel previous running effects and perform another effect
-  
+
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - fsm - An instance of the IStateMachine protocol
@@ -426,17 +502,17 @@
 
 (defn destroyed?
   "Helper function to determine if a FSM instance was destroyed
-  
+
   Arguments:
   - fsm - A FiniteStateMachine instance implementing the IStateMachine protocol
-  
+
   Returns boolean, true if the state is :dev.jaide.finity.core/destroyed"
   [fsm]
   (= (get @fsm :value) ::destroyed))
 
 (defn assert-alive
   "Helper function to assert fsm is alive (not destroyed)
-  
+
   Arguments:
   - fsm - A FiniteStateMachine instance implementing the IStateMachine protocol
 
@@ -520,14 +596,14 @@
 
 (defn spec->diagram
   "Transform a FSM spec into a Mermaid flowchart diagram
-  
+
   Arguments:
   - fsm-spec-ref - An FSM spec atom created with the `fsm/create` function
   - opts - Required hashmap of named option
-  
+
   Options:
   - direction - String should be a mermaid string TD or LR
-  
+
   Returns a mermaid chart string"
   [fsm-spec-ref & {:keys [direction]
                    :or {direction "TD"}}]
