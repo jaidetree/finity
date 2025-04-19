@@ -457,21 +457,13 @@
                     :tasks {:tasks (v/vector task)}}
 
            :actions {:fetch {:url (v/string)}
-                     :fetched {:tasks (v/list task)}
+                     :fetched {:tasks (v/vector task)}
                      :error {:error (v/instance js/Error.)}}
 
            :effects {:fetch [{:url (v/string)}
                              (fn [{:keys [dispatch effect]}]
-                               (-> (js/Promise. (fn [resolve reject]
-                                                  (js/fetch (:url effect))))
-                                   (.then #(.json %))
-                                   (.then #(js->clj :keywordize-keys true))
-                                   (.then #(dispatch {:type :fetched
-                                                      :tasks (get % :tasks)}))
-                                   (.catch #(do
-                                              (js/console.error %)
-                                              (dispatch {:type :error
-                                                         :error %})))))]}
+                               (dispatch {:type :fetched :tasks [{:id "test-id"
+                                                                  :title "Task Title"}]}))]}
 
            :transitions
            [{:from [:empty]
@@ -496,7 +488,16 @@
                    {:value :empty
                     :context {:error (:error action)}})}]}]
       (try
-        (fsm/define spec)
+        (let [fsm-spec (fsm/define spec)
+              fsm (fsm/atom-fsm fsm-spec {})]
+          (is (= @fsm {:value :empty
+                       :context {:error nil}
+                       :effect nil}))
+          (fsm/dispatch fsm {:type :fetch :url "https://example.com"})
+          (is (= @fsm {:value :loading
+                       :context {:url "https://example.com"}
+                       :effect {:id :fetch :url "https://example.com"}})))
+          
         (catch :default error
           (js/console.error error)
           (throw error))))))

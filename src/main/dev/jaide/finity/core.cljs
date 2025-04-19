@@ -279,8 +279,8 @@
   [fsm-spec-ref transitions]
   (doseq [tin-spec transitions]
     (if (keyword? (:to transition))
-      (transition fsm-spec-ref (dissoc tin-spec :to) (:to transition))
-      (transition fsm-spec-ref (dissoc tin-spec :do) (:do transition))))
+      (transition fsm-spec-ref (dissoc tin-spec :to) (:to tin-spec))
+      (transition fsm-spec-ref (dissoc tin-spec :do) (:do tin-spec))))
   fsm-spec-ref)
 
 (defn define
@@ -293,7 +293,9 @@
   Example:
   (fsm/define
     {:id :traffic
-     :state {:value :green}
+     :state {:value :green
+             :context {}}
+
      :states {:green {} ;; hash-map is a map of validators
               :red {}
               :yellow {}}
@@ -359,6 +361,7 @@
   [fsm-spec action]
   (let [validator (get-in fsm-spec [:validators :actions (:type action)])]
     (assert (fn? validator) (str "Action not defined, got " (pr-str action)))
+    (v/assert-valid validator action)
     action))
 
 (defn- get-transition
