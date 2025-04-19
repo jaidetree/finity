@@ -361,8 +361,7 @@
   [fsm-spec action]
   (let [validator (get-in fsm-spec [:validators :actions (:type action)])]
     (assert (fn? validator) (str "Action not defined, got " (pr-str action)))
-    (v/assert-valid validator action)
-    action))
+    (:output (v/assert-valid validator action))))
 
 (defn- get-transition
   [fsm state action]
