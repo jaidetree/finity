@@ -443,6 +443,63 @@
       (is (= diagram
              "flowchart TD\n    init([start])-->:green-light\n    :red-light-->|:change-light| :green-light\n    :green-light-->|:change-light| :yellow-light\n    :yellow-light-->|:change-light| :red-light")))))
 
+(deftest full-example-test
+  (testing "parses a full example"
+    (let [task (v/record {:id (v/string)
+                          :title (v/string)})
+          spec
+          {:id :router
+           :state {:value :empty
+                   :context {:error nil}}
+
+           :states {:empty {:error (v/nilable (v/instance js/Error))}
+                    :loading {:url (v/string)}
+                    :tasks {:tasks (v/vector task)}}
+
+           :actions {:fetch {:url (v/string)}
+                     :fetched {:tasks (v/list task)}
+                     :error {:error (v/instance js/Error.)}}
+
+           :effects {:fetch [{:url (v/string)}
+                             (fn [{:keys [dispatch effect]}]
+                               (-> (js/Promise. (fn [resolve reject]
+                                                  (js/fetch (:url effect))))
+                                   (.then #(.json %))
+                                   (.then #(js->clj :keywordize-keys true))
+                                   (.then #(dispatch {:type :fetched
+                                                      :tasks (get % :tasks)}))
+                                   (.catch #(do
+                                              (js/console.error %)
+                                              (dispatch {:type :error
+                                                         :error %})))))]}
+
+           :transitions
+           [{:from [:empty]
+             :actions [:fetch]
+             :to [:loading]
+             :do (fn [state action]
+                   {:value :loading
+                    :context {:url (:url action)}
+                    :effect {:id :fetch :url (:url action)}})}
+
+            {:from [:loading]
+             :actions [:fetched]
+             :to [:tasks]
+             :do (fn [state action]
+                   {:value :tasks
+                    :context {:tasks (:tasks action)}})}
+
+            {:from [:loading]
+             :actions [:error]
+             :to [:empty]
+             :do (fn [state action]
+                   {:value :empty
+                    :context {:error (:error action)}})}]}]
+      (try
+        (fsm/define spec)
+        (catch :default error
+          (js/console.error error)
+          (throw error))))))
 (comment
   #_(def test-fsm
       (-> (fsm/create)

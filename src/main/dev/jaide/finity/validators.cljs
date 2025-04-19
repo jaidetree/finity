@@ -16,7 +16,9 @@
 
 (def effects-validator
   (v/hash-map (v/keyword)
-              (v/vector-tuple [validator-map
+              (v/vector-tuple [(v/union
+                                (v/literal {})
+                                validator-map)
                                (v/assert fn?)])))
 
 (def transitions-validator
@@ -35,9 +37,7 @@
   (v/record
    {:id (v/keyword)
     :state (v/record {:value (v/keyword)
-                      :context (v/union
-                                (v/literal {})
-                                validator-map)
+                      :context (v/assert map?)
                       :effect (v/nilable
                                (v/chain
                                 (v/record {:id (v/keyword)})
