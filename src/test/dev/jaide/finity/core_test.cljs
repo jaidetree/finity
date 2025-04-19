@@ -483,10 +483,7 @@
 
             {:from [:loading]
              :actions [:error]
-             :to [:empty]
-             :do (fn [state action]
-                   {:value :empty
-                    :context {:error (:error action)}})}]}]
+             :to :empty}]}]
       (try
         (let [fsm-spec (fsm/define spec)
               fsm (fsm/atom-fsm fsm-spec {})]

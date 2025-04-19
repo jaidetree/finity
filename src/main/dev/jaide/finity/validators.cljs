@@ -22,16 +22,17 @@
                                (v/assert fn?)])))
 
 (def transitions-validator
-  (v/vector (v/union
-             (v/record
-              {:from (v/vector (v/keyword))
-               :actions (v/vector (v/keyword))
-               :to (v/vector (v/keyword))
-               :do (v/assert fn?)}
-              (v/record
-               {:from (v/vector (v/keyword))
-                :actions (v/vector (v/keyword))
-                :to (v/keyword)})))))
+  (v/vector
+   (v/union
+    (v/record
+     {:from (v/vector (v/keyword))
+      :actions (v/vector (v/keyword))
+      :to (v/vector (v/keyword))
+      :do (v/assert fn?)})
+    (v/record
+     {:from (v/vector (v/keyword))
+      :actions (v/vector (v/keyword))
+      :to (v/keyword)}))))
 
 (def define-validator
   (v/record

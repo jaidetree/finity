@@ -78,7 +78,7 @@
 
 ## 7. Prepare project for publishing
 
-- [ ] Design logo
+- [x] Design logo
 - [x] Update readme.md
 - [x] Copy versioning script from valhalla
 - [x] Generate pom file
@@ -90,5 +90,9 @@
 - [x] Configure CI
 - [x] Set env vars
 - [x] Draft a release
-- [ ] Deploy to clojars
+- [x] Deploy to clojars
 - [ ] Announce in Slack
+
+## 9. Follow-Up
+
+- [ ] Restructure state to `{:current {:state :idle :context {...} :effect {...}}}`
