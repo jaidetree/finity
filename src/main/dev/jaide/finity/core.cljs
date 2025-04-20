@@ -163,7 +163,7 @@
   - fsm-spec-ref - An fsm-spec atom from the `create` function
   - transition-map - A hash-map combining states, actions, and to states
   - f-or-kw - A transition function that receives the current state and the
-              action or keyword representing.
+              action or keyword for simple state value transitions.
 
   Transition Map:
   - :from - Vector of state keywords to transition from
@@ -180,10 +180,12 @@
         (throw (js/Error. (str "Transition already defined for state "
                                (pr-str (first state-action-vec))
                                " and action " (pr-str (second state-action-vec))))))
+      (pprint {:to to
+               :f-or-kw f-or-kw})
       (swap! fsm-spec-ref assoc-in [:transitions state-action-vec]
-             {:allowed-states (if (fn? f-or-kw)
-                                (set to)
-                                #{f-or-kw})
+             {:allowed-states (if (keyword? f-or-kw)
+                                #{f-or-kw}
+                                (set to))
               :handler (if (fn? f-or-kw)
                          f-or-kw
                          (fn []
@@ -277,10 +279,10 @@
 
 (defn- define-transitions
   [fsm-spec-ref transitions]
-  (doseq [tin-spec transitions]
-    (if (keyword? (:to transition))
-      (transition fsm-spec-ref (dissoc tin-spec :to) (:to tin-spec))
-      (transition fsm-spec-ref (dissoc tin-spec :do) (:do tin-spec))))
+  (doseq [trn transitions]
+    (if (keyword? (:to trn))
+      (transition fsm-spec-ref (dissoc trn :to) (:to trn))
+      (transition fsm-spec-ref (dissoc trn :do) (:do trn))))
   fsm-spec-ref)
 
 (defn define
