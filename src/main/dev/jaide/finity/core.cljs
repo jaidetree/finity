@@ -574,7 +574,7 @@
   (-lookup [this k]
     (-lookup this k nil))
   (-lookup [this k not-found]
-    (get @this k not-found)))
+    (get (:context @this) k not-found)))
 
 (defn atom-fsm
   "Create an FSM instance from a spec with an initial state based on an atom.

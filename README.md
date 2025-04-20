@@ -104,7 +104,7 @@ Define how states transition in response to actions:
        :actions [:fetch]
        :to [:pending]}
       (fn [state action]
-        {:value :loading
+        {:state :loading
          :context {:data nil}
          :effect {:id :fetch-data
                   :url (:url action)}}))
@@ -114,7 +114,7 @@ Define how states transition in response to actions:
        :actions [:resolve]
        :to [:fulfilled]}
       (fn [state action]
-        {:value :fulfilled
+        {:state :fulfilled
          :context {:data (:data action)}}))
 
     (fsm/transition
@@ -122,7 +122,7 @@ Define how states transition in response to actions:
        :actions [:reject]
        :to [:rejected]}
       (fn [state action]
-        {:value :rejected
+        {:state :rejected
          :context {:message (:message action)}}))
 
     (fsm/transition
@@ -146,20 +146,20 @@ The define function works like the following:
 (def fsm-spec
   (fsm/define
     {:id :define-test-fsm
-     :state   {:value :idle
-               :context {}
-               ;; For example if wanting to start with an effect running
-               :effect {:id :fetch
-                        :url "/api/tasks"}}
+     :initial   {:state :idle
+                 :context {}
+                 ;; For example if wanting to start with an effect running
+                 :effect {:id :fetch
+                          :url "/api/tasks"}}
 
      :states  {:idle {}
-             :loading {:url (v/string)}
-             :fulfilled {:data (v/hash-map (v/string) (v/string))}}
+               :loading {:url (v/string)}
+               :fulfilled {:data (v/hash-map (v/string) (v/string))}}
 
      :actions {:fetch {:url (v/string)}
-             :fetched {:data (v/hash-map (v/string) (v/string))}
-             :reset {}
-             :error {:error (v/instance js/Error)}}
+               :fetched {:data (v/hash-map (v/string) (v/string))}
+               :reset {}
+               :error {:error (v/instance js/Error)}}
 
      :effects {:fetch [{:url (v/string)}
                        (fn [{:keys [dispatch effect]}]
@@ -172,12 +172,12 @@ The define function works like the following:
        :actions [:fetch]
        :to [:loading]
       :do (fn [state action]
-           {:value :loading
+           {:state :loading
             :context {:url (:url action)}
             :effect {:id :fetch :url (:url action)}})}]}))
 ```
 
-From there the return value, a spec atom may be used to create an instance of the machine.
+From there the return state, a spec atom may be used to create an instance of the machine.
 
 ### Creating an Atom Instance
 
@@ -200,17 +200,22 @@ Trigger state transitions by dispatching actions:
 Access the current state:
 
 ```clojure
-;; Using deref
+;; Using deref gets the entire state hash-map
 @fsm
-;; => {:value :loading, :context {:data nil}, :effect {:id :fetch-data, :url "..."}}
+;; => {:state :loading, :context {:data nil}, :effect {:id :fetch-data, :url "..."}}
 
-;; Using get
-(get fsm :value)
-;; => :loading
+;; Using get reads from the state context
+(get fsm :data)
+;; => "some-value"
+
+;; This is equivalent to `(get-in @fsm [:context :data])`
 
 ;; Using get-in
-(get-in fsm [:context :data])
-;; => #js { "some-key" "some-value" }
+(get-in fsm [:task :title])
+;; => "My Task"
+
+
+;; This is equivalent to `(get-in @fsm [:context :task :title])`
 ```
 
 ### Subscribing to State Changes
@@ -221,8 +226,8 @@ Listen for state transitions:
 (def unsubscribe
   (fsm/subscribe fsm
     (fn [transition]
-      (println "Transitioned from" (get-in transition [:prev :value])
-               "to" (get-in transition [:next :value])
+      (println "Transitioned from" (get-in transition [:prev :state])
+               "to" (get-in transition [:next :state])
                "via" (get-in transition [:action :type])))))
 
 ;; Later, to stop listening:
@@ -265,7 +270,11 @@ Properly dispose of the machine when done:
 
     (fsm/initial :red))
 
-(def light (fsm/atom-fsm traffic-light {:state {:value :red}}))
+(def light
+ (fsm/atom-fsm traffic-light
+  ;; Providing initial state on the instance is optional, should be defined against the
+  ;; spec instead
+  {:initial {:state :red}}))
 
 ;; Cycle through the lights
 (fsm/dispatch light {:type :next}) ;; => green
@@ -301,20 +310,20 @@ Properly dispose of the machine when done:
     (fsm/transition
       {:from [:idle] :actions [:fetch] :to [:pending]}
       (fn [state action]
-        {:value :pending
+        {:state :pending
          :context {:url (:url action)}
          :effect {:id :fetch-data :url (:url action)}}))
 
     (fsm/transition
       {:from [:pending] :actions [:resolve] :to [:fulfilled]}
       (fn [state action]
-        {:value :fulfilled
+        {:state :fulfilled
          :context {:data (:data action)}}))
 
     (fsm/transition
       {:from [:pending] :actions [:reject] :to [:error]}
       (fn [state action]
-        {:value :rejected
+        {:state :rejected
          :context {:message (:message action)}}))
 
     (fsm/transition
