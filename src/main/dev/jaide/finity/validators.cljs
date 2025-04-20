@@ -37,12 +37,12 @@
 (def define-validator
   (v/record
    {:id (v/keyword)
-    :state (v/record {:value (v/keyword)
-                      :context (v/assert map?)
-                      :effect (v/nilable
-                               (v/chain
-                                (v/record {:id (v/keyword)})
-                                (v/assert map?)))})
+    :initial (v/record {:state (v/keyword)
+                        :context (v/assert map?)
+                        :effect (v/nilable
+                                 (v/chain
+                                  (v/record {:id (v/keyword)})
+                                  (v/assert map?)))})
     :states states-validator
     :actions actions-validator
     :effects effects-validator

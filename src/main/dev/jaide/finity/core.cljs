@@ -22,7 +22,7 @@
          :or {atom atom}}]
   (atom
    {:fsm/id      id
-    :initial     {:value nil
+    :initial     {:state nil
                   :context {}}
     :transitions {}
     :cleanup-effect nil
@@ -74,8 +74,9 @@
   (let [context-validator (if (nil? context-validator-map)
                             (v/literal {})
                             (v/record context-validator-map))
-        validator (v/record {:value (v/literal id)
-                             :context context-validator})]
+        validator (v/record {:state (v/literal id)
+                             :context context-validator
+                             :effect (v/nilable (v/assert map?))})]
     (swap! fsm-spec-ref assoc-in [:validators :states id] validator)
     fsm-spec-ref))
 
@@ -176,20 +177,18 @@
   (let [fsm @fsm-spec-ref
         transitions (transitions-map->kvs fsm from actions)]
     (doseq [state-action-vec transitions]
-      (when (fn? (get-in @fsm-spec-ref [:transitions state-action-vec :handler]))
+      (when (fn? (get-in @fsm-spec-ref [:transitions state-action-vec :reducer]))
         (throw (js/Error. (str "Transition already defined for state "
                                (pr-str (first state-action-vec))
                                " and action " (pr-str (second state-action-vec))))))
-      (pprint {:to to
-               :f-or-kw f-or-kw})
       (swap! fsm-spec-ref assoc-in [:transitions state-action-vec]
              {:allowed-states (if (keyword? f-or-kw)
                                 #{f-or-kw}
                                 (set to))
-              :handler (if (fn? f-or-kw)
-                         f-or-kw
+              :reducer (if (keyword? f-or-kw)
                          (fn []
-                           {:value f-or-kw}))}))
+                           {:state f-or-kw})
+                         f-or-kw)}))
     fsm-spec-ref))
 
 (defn assert-state
@@ -198,12 +197,12 @@
 
   Arguments:
   - fsm-spec - An fsm-spec hash-map already derefed
-  - state - A hash-map with :value keyword and :context hash-map
+  - state - A hash-map with :state keyword and :context hash-map
 
   Returns the parsed output of the state validator
   "
   [fsm-spec state]
-  (if-let [validator (get-in fsm-spec [:validators :states (:value state)])]
+  (if-let [validator (get-in fsm-spec [:validators :states (:state state)])]
     (let [result (v/validate validator state)]
       (if (v/valid? result)
         (:output result)
@@ -242,12 +241,12 @@
 
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
-  - state - A state hashmap with :value and :context attrs or value keyword
+  - state - A state hashmap with :state and :context attrs or value keyword
 
   Returns the fsm-spec-ref atom for chaining"
   [fsm-spec-ref state]
   (let [fsm-spec @fsm-spec-ref
-        state (if (keyword? state) {:value state} state)
+        state (if (keyword? state) {:state state} state)
         state (merge {:context {}} state)
         state (assert-state fsm-spec state)]
     (swap! fsm-spec-ref assoc :initial state)
@@ -295,7 +294,7 @@
   Example:
   (fsm/define
     {:id :traffic
-     :state {:value :green
+     :initial {:state :green
              :context {}}
 
      :states {:green {} ;; hash-map is a map of validators
@@ -310,7 +309,7 @@
        :actions [:change]
        :to [:green] ;; vector requires :do function
        :do (fn [state action]
-             {:value :green
+             {:state :green
               :effect {:id :wait :delay 60_000})}}
       {:from [:green]
        :actions [:change]
@@ -328,7 +327,7 @@
         (define-actions (:actions spec))
         (define-effects (:effects spec))
         (define-transitions (:transitions spec))
-        (initial (:state spec)))))
+        (initial (:initial spec)))))
 
 (defn init
   "Validate an initial state, context, and effect. Intended for internal use
@@ -336,16 +335,16 @@
 
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
-  - state - A hash-map with :value state keyword and optional :context attr
+  - state - A hash-map with :state state keyword and optional :context attr
   - effect - Effect hash-map with :id and arg attrs, needs to match defined
              effect validator
 
-  Returns state hash-map with :value, :context, and :effect keys
+  Returns state hash-map with :state, :context, and :effect keys
   "
   [fsm-spec-ref state & [effect]]
   (assert-fsm-spec fsm-spec-ref)
   (let [fsm-spec  @fsm-spec-ref
-        state {:value (:value state)
+        state {:state (:state state)
                :context (:context state)
                :effect effect}]
     (assert-state fsm-spec state)
@@ -365,48 +364,49 @@
     (assert (fn? validator) (str "Action not defined, got " (pr-str action)))
     (:output (v/assert-valid validator action))))
 
-(defn- get-transition
-  [fsm state action]
-  (let [transition (get-in fsm [:transitions [state (:type action)]])
-        {:keys [handler]} transition]
-    (assert (fn? handler) (str "Transition not defined from state " (pr-str state)
-                               " to " (pr-str (:type action))))
-    transition))
+(defn- get-transition-entry
+  [fsm-spec state action]
+  (let [entry (get-in fsm-spec [:transitions [(:state state) (:type action)]])
+        {:keys [reducer]} entry]
+    (when (and (not (fn? reducer)) (get-in fsm-spec [:opts :log :dispatch]))
+      (js/console.warn
+       (str "Transition not defined from state " (pr-str state)
+            " to " (pr-str (:type action)))))
+    entry))
 
 (defn- create-transition
-  [fsm-spec-ref prev-state action]
-  (let [fsm-spec @fsm-spec-ref
-        {:keys [handler allowed-states]} (get-transition fsm-spec (:value prev-state) action)
-        next-state (-> prev-state
-                       (merge (handler prev-state action)))]
-    (assert-state fsm-spec next-state)
-    (assert (contains? allowed-states (:value next-state))
-            (str "Resulting state "
-                 (pr-str (:value next-state))
-                 " was not in list of allowed :to states "
-                 (pr-str allowed-states)))
-    {:prev prev-state
-     :next next-state
-     :action action
-     :at (js/Date.now)}))
+  [allowed-states prev-state next-state action]
+  {:prev prev-state
+   :next next-state
+   :action action
+   :at (js/Date.now)})
 
-(defn prev-state->next-state
+(defn transition-state
   "Perform a defined transition from one state to another with an action.
-  Intended for internal use or implementing state adapters
+  Intended for internal use or implementing state adapters. Validates the
+  resulting state against the spec.
 
   Arguments:
-  - fsm-spec-ref - An fsm-spec atom from the `create` function
-  - prev-state - A hash-map with :value, :context, and :effect keys
+  - fsm-spec - An fsm-spec hash-map derefed from the `create` function
+  - prev-state - A hash-map with :state, :context, and :effect keys
   - action - A hash-map with a :type and arg attrs
 
   Returns a transition has-map with :prev state :next state and :action
   "
-  [fsm-spec-ref prev-state action]
-  (let [spec @fsm-spec-ref
-        action (-> (assert-action spec action)
-                   (assoc-in [:meta :created-at] (js/Date.now)))
-        transition (create-transition fsm-spec-ref prev-state action)]
-    transition))
+  [fsm-spec prev-state action]
+  (assert-action fsm-spec action)
+  (when-let [transition-entry (get-transition-entry fsm-spec prev-state action)]
+    (let [{:keys [reducer allowed-states]} transition-entry
+          action (assoc-in action [:meta :created-at] (js/Date.now))
+          next-state (->> (reducer prev-state action)
+                          (merge prev-state)
+                          (assert-state fsm-spec))]
+      (assert (contains? allowed-states (:state next-state))
+              (str "Resulting state "
+                   (pr-str (:state next-state))
+                   " was not in list of allowed :to states "
+                   (pr-str allowed-states)))
+      (create-transition allowed-states prev-state next-state action))))
 
 (defprotocol IStateMachine
   "A protocol for defining state machines against a spec atom. Supports creating
@@ -512,7 +512,7 @@
 
   Returns boolean, true if the state is :dev.jaide.finity.core/destroyed"
   [fsm]
-  (= (get @fsm :value) ::destroyed))
+  (= (get @fsm :state) ::destroyed))
 
 (defn assert-alive
   "Helper function to assert fsm is alive (not destroyed)
@@ -533,18 +533,20 @@
 
   (dispatch [this action]
     (assert-alive this)
-    (let [state @this
-          transition (prev-state->next-state spec-atom state action)]
-      (swap! state-atom update :state merge (:next transition))
-      (doseq [subscriber (get @state-atom :subscribers)]
-        (subscriber transition))
-      (swap! state-atom (fn [state]
-                          (let [[status cleanup-effect] (run-effect! spec-atom this transition)]
-                            (case status
-                              :updated (assoc state :cleanup-effect (when (fn? cleanup-effect)
-                                                                      cleanup-effect))
-                              state))))
-      transition))
+    (let [prev-state @this
+          fsm-spec @spec-atom]
+      (when-let [transition (transition-state fsm-spec prev-state action)]
+        (swap! state-atom assoc :current (:next transition))
+        (doseq [subscriber (get @state-atom :subscribers)]
+          (subscriber transition))
+        (swap! state-atom
+               (fn [state]
+                 (let [[status cleanup-effect] (run-effect! spec-atom this transition)]
+                   (-> (case status
+                         :updated (assoc state :cleanup-effect (when (fn? cleanup-effect)
+                                                                 cleanup-effect))
+                         state)))))
+        transition)))
 
   (subscribe [this listener]
     (assert-alive this)
@@ -556,18 +558,17 @@
   (destroy [this]
     (assert-alive this)
     (when-let [cleanup-effect (get @state-atom :cleanup-effect)]
-      (println "cleanup" cleanup-effect)
       (cleanup-effect))
-    (swap! state-atom merge {:state {:value ::destroyed
-                                     :context {}
-                                     :effect ::destroyed}
+    (swap! state-atom merge {:current {:state ::destroyed
+                                       :context {}
+                                       :effect ::destroyed}
                              :cleanup-effect nil
                              :subscribers #{}})
     this)
 
   IDeref
   (-deref [_this]
-    (:state @state-atom))
+    (:current @state-atom))
 
   ILookup
   (-lookup [this k]
@@ -580,21 +581,22 @@
 
   Notes:
   - Every transition must be validated
-  - Returned FSM can be derefed @fsm as well as (get fsm :value)
+  - Returned FSM can be derefed @fsm as well as (get fsm :current)
 
   Arguments:
   - spec - An FSM spec atom created with the `fsm/create` function
   - opts - Required hashmap of named options
 
   Options:
-  - state - Hash map with :value and optional :context attrs
+  - initial - A valid initial state hash-map with :state, optional :context
+              and :effect attrs
 
   Returns an instance of FSMAtom
   "
-  [spec {:keys [state effect atom]
+  [spec {:keys [initial effect atom]
          :or {atom atom}}]
   (AtomFSM. spec
-            (atom {:state (init spec (merge {:context {}} (:initial @spec) state) effect)
+            (atom {:current (init spec (merge {:context {}} (:initial @spec) initial) effect)
                    :cleanup-effect nil
                    :subscribers #{}})))
 
@@ -612,7 +614,7 @@
   [fsm-spec-ref & {:keys [direction]
                    :or {direction "TD"}}]
   (let [spec @fsm-spec-ref
-        initial (get-in spec [:initial :value])]
+        initial (get-in spec [:initial :state])]
     (->> (:transitions spec)
          (mapcat
           (fn [[[state action] {:keys [allowed-states]}]]

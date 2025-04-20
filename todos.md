@@ -95,4 +95,4 @@
 
 ## 9. Follow-Up
 
-- [ ] Restructure state to `{:current {:state :idle :context {...} :effect {...}}}`
+- [x] Restructure state to `{:current {:state :idle :context {...} :effect {...}}}`
