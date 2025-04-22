@@ -187,7 +187,9 @@
                                 (set to))
               :reducer (if (keyword? f-or-kw)
                          (fn []
-                           {:state f-or-kw})
+                           {:state f-or-kw
+                            :context {}
+                            :effect nil})
                          f-or-kw)}))
     fsm-spec-ref))
 
