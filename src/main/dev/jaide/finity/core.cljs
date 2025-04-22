@@ -377,7 +377,7 @@
     entry))
 
 (defn- create-transition
-  [allowed-states prev-state next-state action]
+  [prev-state next-state action]
   {:prev prev-state
    :next next-state
    :action action
@@ -401,14 +401,14 @@
     (let [{:keys [reducer allowed-states]} transition-entry
           action (assoc-in action [:meta :created-at] (js/Date.now))
           next-state (->> (reducer prev-state action)
-                          (merge prev-state)
+                          (merge {:context {} :effect nil})
                           (assert-state fsm-spec))]
       (assert (contains? allowed-states (:state next-state))
               (str "Resulting state "
                    (pr-str (:state next-state))
                    " was not in list of allowed :to states "
                    (pr-str allowed-states)))
-      (create-transition allowed-states prev-state next-state action))))
+      (create-transition prev-state next-state action))))
 
 (defprotocol IStateMachine
   "A protocol for defining state machines against a spec atom. Supports creating
