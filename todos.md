@@ -28,9 +28,9 @@
 - [x] Implement `reduce-state*` reducer to calculate new state with value, ctx, and effect
   - [x] Validate action
   - [x] Check if transition is supported
-  - [ ] If transition found but it's a keyword, update state value
+  - [x] If transition found but it's a keyword, update state value
   - [x] If transition not found and exhaustive is enabled, throw error for unhandled state
-  - [ ] If state returned is a keyword, update state value
+  - [x] If state returned is a keyword, update state value
   - [x] If hash-map returned assume state, context, and optional effect
 - [x] Write tests for `reduce-state*` reducer
 - [x] Implement `run-effect!` helper

@@ -378,6 +378,19 @@
    :action action
    :at (js/Date.now)})
 
+(defn- normalize-state
+  [next-state]
+  (let [next-state (if (keyword? next-state)
+                     {:state next-state}
+                     next-state)
+        {:keys [state context effect]
+         :or {context {} effect nil}} next-state]
+    {:state state
+     :context context
+     :effect (if (keyword? effect)
+               {:id effect}
+               effect)}))
+
 (defn transition-state
   "Perform a defined transition from one state to another with an action.
   Intended for internal use or implementing state adapters. Validates the
@@ -396,10 +409,8 @@
       (let [{:keys [reducer allowed-states]} transition-entry
             action (assoc-in action [:meta :created-at] (js/Date.now))
             next-state (->> (reducer prev-state action)
-                            (merge {:context {} :effect nil})
-                            (parse-state fsm-spec))
-            next-state (-> next-state
-                           (update :effect #(parse-effect fsm-spec %)))]
+                            (normalize-state)
+                            (parse-state fsm-spec))]
         (assert (contains? allowed-states (:state next-state))
                 (str "Resulting state "
                      (pr-str (:state next-state))
