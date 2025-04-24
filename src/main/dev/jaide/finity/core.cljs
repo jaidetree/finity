@@ -193,7 +193,7 @@
                          f-or-kw)}))
     fsm-spec-ref))
 
-(defn assert-state
+(defn parse-state
   "Assert a state matches a defined state and passes validation.
   Mostly intended for internal use or implementing other state adapters.
 
@@ -205,17 +205,13 @@
   "
   [fsm-spec state]
   (if-let [validator (get-in fsm-spec [:validators :states (:state state)])]
-    (let [result (v/validate validator state)]
-      (if (v/valid? result)
-        (:output result)
-        (throw (js/Error.
-                (str "Invalid state\n"
-                     (v/errors->string (:errors result)))))))
-
+    (v/parse validator state
+             :message (fn [{:keys [errors]}]
+                        (str "Invalid state\n" (v/errors->string errors))))
     (throw (js/Error. (str "Validator not found for state, got "
                            (pr-str state))))))
 
-(defn assert-effect
+(defn parse-effect
   "Assert an effect matches a defined effect and passes validation.
   Mostly intended for internal use or implementing other state adapters.
 
@@ -226,16 +222,12 @@
   Returns the parsed output of the effect validator
   "
   [fsm-spec effect]
-  (if (nil? effect)
-    effect
-    (if-let [validator (get-in fsm-spec [:validators :effects (:id effect)])]
-      (let [result (v/validate validator effect)]
-        (if (v/valid? result)
-          (:output result)
-          (throw (js/Error. (str "FSMInvalidEffectError: Effect is not valid\n"
-                                 (v/errors->string (:errors result)))))))
-      (throw (js/Error. (str "FSMInvalidEffectError: Validator not found for effect, got "
-                             (pr-str effect)))))))
+  (when (some? effect)
+    (let [effect (if (keyword? effect) {:id effect} effect)]
+      (if-let [validator (get-in fsm-spec [:validators :effects (:id effect)])]
+        (v/parse validator effect)
+        (throw (js/Error. (str "Validator not found for effect, got "
+                               (pr-str effect))))))))
 
 (defn initial
   "Set default initial state of fsm spec. Can be overwritten in atom-fsm
@@ -250,7 +242,7 @@
   (let [fsm-spec @fsm-spec-ref
         state (if (keyword? state) {:state state} state)
         state (merge {:context {}} state)
-        state (assert-state fsm-spec state)]
+        state (parse-state fsm-spec state)]
     (swap! fsm-spec-ref assoc :initial state)
     fsm-spec-ref))
 
@@ -348,12 +340,10 @@
   (let [fsm-spec  @fsm-spec-ref
         state {:state (:state state)
                :context (:context state)
-               :effect effect}]
-    (assert-state fsm-spec state)
-    (assert-effect fsm-spec effect)
-    state))
+               :effect (parse-effect fsm-spec effect)}]
+    (parse-state fsm-spec state)))
 
-(defn assert-action
+(defn parse-action
   "Validates an action matches a defined action validator
 
   Arguments:
@@ -362,9 +352,14 @@
 
   Returns action hash-map"
   [fsm-spec action]
-  (let [validator (get-in fsm-spec [:validators :actions (:type action)])]
+  (let [action (if (keyword? action)
+                 {:type action}
+                 action)
+        validator (get-in fsm-spec [:validators :actions (:type action)])]
     (assert (fn? validator) (str "Action not defined, got " (pr-str action)))
-    (:output (v/assert-valid validator action))))
+    (v/parse validator action
+             :message (fn [{:keys [errors]}]
+                        (str "Invalid action:\n" (v/errors->string errors))))))
 
 (defn- get-transition-entry
   [fsm-spec state action]
@@ -396,19 +391,21 @@
   Returns a transition has-map with :prev state :next state and :action
   "
   [fsm-spec prev-state action]
-  (assert-action fsm-spec action)
-  (when-let [transition-entry (get-transition-entry fsm-spec prev-state action)]
-    (let [{:keys [reducer allowed-states]} transition-entry
-          action (assoc-in action [:meta :created-at] (js/Date.now))
-          next-state (->> (reducer prev-state action)
-                          (merge {:context {} :effect nil})
-                          (assert-state fsm-spec))]
-      (assert (contains? allowed-states (:state next-state))
-              (str "Resulting state "
-                   (pr-str (:state next-state))
-                   " was not in list of allowed :to states "
-                   (pr-str allowed-states)))
-      (create-transition prev-state next-state action))))
+  (let [action (parse-action fsm-spec action)]
+    (when-let [transition-entry (get-transition-entry fsm-spec prev-state action)]
+      (let [{:keys [reducer allowed-states]} transition-entry
+            action (assoc-in action [:meta :created-at] (js/Date.now))
+            next-state (->> (reducer prev-state action)
+                            (merge {:context {} :effect nil})
+                            (parse-state fsm-spec))
+            next-state (-> next-state
+                           (update :effect #(parse-effect fsm-spec %)))]
+        (assert (contains? allowed-states (:state next-state))
+                (str "Resulting state "
+                     (pr-str (:state next-state))
+                     " was not in list of allowed :to states "
+                     (pr-str allowed-states)))
+        (create-transition prev-state next-state action)))))
 
 (defprotocol IStateMachine
   "A protocol for defining state machines against a spec atom. Supports creating
