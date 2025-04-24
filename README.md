@@ -11,13 +11,13 @@ A ClojureScript Finite State Machine library. Finity provides a robust toolkit t
 ### deps.edn / Babashka
 
 ```clojure
-{:deps {dev.jaide/finity {:mvn/version "2025.4.18-SNAPSHOT"}}}
+{:deps {dev.jaide/finity {:mvn/version "2025.4.24-SNAPSHOT"}}}
 ```
 
 ### Leiningen / Boot
 
 ```clojure
-[dev.jaide/finity "2025.4.18-SNAPSHOT"]
+[dev.jaide/finity "2025.4.24-SNAPSHOT"]
 ```
 
 ## Why another FSM library?
