@@ -445,60 +445,110 @@
              "flowchart TD\n    init([start])-->:green-light\n    :red-light-->|:change-light| :green-light\n    :green-light-->|:change-light| :yellow-light\n    :yellow-light-->|:change-light| :red-light")))))
 
 (deftest full-example-test
-  (testing "parses a full example"
-    (let [task (v/record {:id (v/string)
-                          :title (v/string)})
-          spec
-          {:id :router
-           :initial {:state :empty
-                     :context {:error nil}}
+  (testing "full-example"
+    (testing "passes"
+      (testing "parses a full example"
+        (let [task (v/record {:id (v/string)
+                              :title (v/string)})
+              spec
+              {:id :router
+               :initial {:state :empty
+                         :context {:error nil}}
 
-           :states {:empty {:error (v/nilable (v/instance js/Error))}
-                    :loading {:url (v/string)}
-                    :tasks {:tasks (v/vector task)}}
+               :states {:empty {:error (v/nilable (v/instance js/Error))}
+                        :loading {:url (v/string)}
+                        :tasks {:tasks (v/vector task)}}
 
-           :actions {:fetch {:url (v/string)}
-                     :fetched {:tasks (v/vector task)}
-                     :error {:error (v/instance js/Error.)}}
+               :actions {:fetch {:url (v/string)}
+                         :fetched {:tasks (v/vector task)}
+                         :error {:error (v/instance js/Error.)}}
 
-           :effects {:fetch [{:url (v/string)}
-                             (fn [{:keys [dispatch effect]}]
-                               (dispatch {:type :fetched :tasks [{:id "test-id"
-                                                                  :title "Task Title"}]}))]}
+               :effects {:fetch [{:url (v/string)}
+                                 (fn [{:keys [dispatch effect]}]
+                                   (dispatch {:type :fetched :tasks [{:id "test-id"
+                                                                      :title "Task Title"}]}))]}
 
-           :transitions
-           [{:from [:empty]
-             :actions [:fetch]
-             :to [:loading]
-             :do (fn [state action]
-                   {:state :loading
-                    :context {:url (:url action)}
-                    :effect {:id :fetch :url (:url action)}})}
+               :transitions
+               [{:from [:empty]
+                 :actions [:fetch]
+                 :to [:loading]
+                 :do (fn [state action]
+                       {:state :loading
+                        :context {:url (:url action)}
+                        :effect {:id :fetch :url (:url action)}})}
 
-            {:from [:loading]
-             :actions [:fetched]
-             :to [:tasks]
-             :do (fn [state action]
-                   {:state :tasks
-                    :context {:tasks (:tasks action)}})}
+                {:from [:loading]
+                 :actions [:fetched]
+                 :to [:tasks]
+                 :do (fn [state action]
+                       {:state :tasks
+                        :context {:tasks (:tasks action)}})}
 
-            {:from [:loading]
-             :actions [:error]
-             :to :empty}]}]
-      (try
-        (let [fsm-spec (fsm/define spec)
-              fsm (fsm/atom-fsm fsm-spec {})]
-          (is (= @fsm {:state :empty
-                       :context {:error nil}
-                       :effect nil}))
-          (fsm/dispatch fsm {:type :fetch :url "https://example.com"})
-          (is (= @fsm {:state :loading
-                       :context {:url "https://example.com"}
-                       :effect {:id :fetch :url "https://example.com"}})))
+                {:from [:loading]
+                 :actions [:error]
+                 :to :empty}]}]
+          (try
+            (let [fsm-spec (fsm/define spec)
+                  fsm (fsm/atom-fsm fsm-spec {})]
+              (is (= @fsm {:state :empty
+                           :context {:error nil}
+                           :effect nil}))
+              (fsm/dispatch fsm {:type :fetch :url "https://example.com"})
+              (is (= @fsm {:state :loading
+                           :context {:url "https://example.com"}
+                           :effect {:id :fetch :url "https://example.com"}})))
           
-        (catch :default error
-          (js/console.error error)
-          (throw error))))))
+            (catch :default error
+              (js/console.error error)
+              (throw error))))))
+    
+    (testing "fails"
+      (testing "action instead of actions"
+        (let [task (v/record {:id (v/string)
+                              :title (v/string)})
+              spec
+              {:id :router
+               :initial {:state :empty
+                         :context {:error nil}}
+
+               :states {:empty {:error (v/nilable (v/instance js/Error))}
+                        :loading {:url (v/string)}
+                        :tasks {:tasks (v/vector task)}}
+
+               :actions {:fetch {:url (v/string)}
+                         :fetched {:tasks (v/vector task)}
+                         :error {:error (v/instance js/Error.)}}
+
+               :effects {:fetch [{:url (v/string)}
+                                 (fn [{:keys [dispatch effect]}]
+                                   (dispatch {:type :fetched :tasks [{:id "test-id"
+                                                                      :title "Task Title"}]}))]}
+
+               :transitions
+               [{:from [:empty]
+                 :action [:fetch]
+                 :to [:loading]
+                 :do (fn [state action]
+                       {:state :loading
+                        :context {:url (:url action)}
+                        :effect {:id :fetch :url (:url action)}})}
+
+                {:from [:loading]
+                 :actions [:fetched]
+                 :to [:tasks]
+                 :do (fn [state action]
+                       {:state :tasks
+                        :context {:tasks (:tasks action)}})}
+
+                {:from [:loading]
+                 :actions [:error]
+                 :to :empty}]}]
+          (try
+            (is (thrown? :default (fsm/define spec)))
+          
+            (catch :default error
+              (js/console.error error)
+              (throw error))))))))
 (comment
   #_(def test-fsm
       (-> (fsm/create)
