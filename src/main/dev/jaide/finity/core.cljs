@@ -6,7 +6,7 @@
    [cljs.core :refer [IDeref ILookup]]
    [dev.jaide.valhalla.core :as v]
    [dev.jaide.finity.validators :refer [define-validator]]
-   [clojure.pprint :refer [pprint]]))
+   [dev.jaide.pprint :refer [pprint]]))
 
 (def default-actions
   {:fsm/create (v/record
@@ -573,19 +573,25 @@
 
   (destroy [this]
     (assert-alive this)
-    (dispatch this :fsm/destroy)
-    (when-let [cleanup-effect (get @state-atom :cleanup-effect)]
-      (cleanup-effect))
     (let [subscribers (get @state-atom :subscribers)
-          prev-state @this]
-      (swap! state-atom merge {:current {:state ::destroyed
-                                         :context {}
-                                         :effect ::destroyed}
-                               :cleanup-effect nil
-                               :subscribers #{}})
-      (let [transition (create-transition prev-state @this :fsm/destroy)]
+          prev-state @this
+          next-state {:state ::destroyed
+                      :context {}
+                      :effect ::destroyed}
+          transition (create-transition prev-state next-state :fsm/destroy)]
+      ;; If an fsm implements a custom :fsm/destroy transition, this prevents
+      ;; subscribers from getting double :fsm/destroy notifications 
+      (swap! state-atom assoc :subscribers #{})
+      (dispatch this :fsm/destroy)
+      ;; Give the fsm a chance to run some effects on destroy before disposing
+      (let [cleanup-effect (get @state-atom :cleanup-effect)]
+        (swap! state-atom merge {:current next-state
+                                 :cleanup-effect nil
+                                 :subscribers #{}})
         (doseq [subscriber subscribers]
-          (subscriber transition))))
+          (subscriber transition))
+        (when (fn? cleanup-effect)
+          (cleanup-effect))))
     this)
 
   IDeref
