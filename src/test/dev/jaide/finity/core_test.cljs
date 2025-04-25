@@ -359,7 +359,7 @@
         (fsm/destroy fsm)
         (is (thrown? :default (fsm/dispatch fsm {:type :complete :data {}})))
         (let [state @fsm]
-          (is (= (count @transactions) 1))
+          (is (= (count @transactions) 2))
           (is (= (:state state) :dev.jaide.finity.core/destroyed))
           (is (= (:context state) {}))
           (is (= (:effect state) :dev.jaide.finity.core/destroyed)))))))

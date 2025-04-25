@@ -8,6 +8,12 @@
    [dev.jaide.finity.validators :refer [define-validator]]
    [clojure.pprint :refer [pprint]]))
 
+(def default-actions
+  {:fsm/create (v/record
+                {:type (v/literal :fsm/create)})
+   :fsm/destroy (v/record
+                 {:type (v/literal :fsm/destroy)})})
+
 (defn create
   "Create an fsm-spec atom
   Arguments:
@@ -28,7 +34,7 @@
     :cleanup-effect nil
     :effects     {}
     :validators  {:states {}
-                  :actions {}
+                  :actions default-actions
                   :effects {}}
     :opts        opts}))
 
@@ -567,13 +573,19 @@
 
   (destroy [this]
     (assert-alive this)
+    (dispatch this :fsm/destroy)
     (when-let [cleanup-effect (get @state-atom :cleanup-effect)]
       (cleanup-effect))
-    (swap! state-atom merge {:current {:state ::destroyed
-                                       :context {}
-                                       :effect ::destroyed}
-                             :cleanup-effect nil
-                             :subscribers #{}})
+    (let [subscribers (get @state-atom :subscribers)
+          prev-state @this]
+      (swap! state-atom merge {:current {:state ::destroyed
+                                         :context {}
+                                         :effect ::destroyed}
+                               :cleanup-effect nil
+                               :subscribers #{}})
+      (let [transition (create-transition prev-state @this :fsm/destroy)]
+        (doseq [subscriber subscribers]
+          (subscriber transition))))
     this)
 
   IDeref
@@ -605,10 +617,12 @@
   "
   [spec {:keys [initial effect atom]
          :or {atom atom}}]
-  (AtomFSM. spec
-            (atom {:current (init spec (merge {:context {}} (:initial @spec) initial) effect)
-                   :cleanup-effect nil
-                   :subscribers #{}})))
+  (doto (AtomFSM.
+         spec
+         (atom {:current (init spec (merge {:context {}} (:initial @spec) initial) effect)
+                :cleanup-effect nil
+                :subscribers #{}}))
+    (dispatch :fsm/create)))
 
 (defn spec->diagram
   "Transform a FSM spec into a Mermaid flowchart diagram
