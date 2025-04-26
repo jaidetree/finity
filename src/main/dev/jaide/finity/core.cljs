@@ -551,18 +551,22 @@
     (assert-alive this)
     (let [prev-state @this
           fsm-spec @spec-atom]
-      (when-let [transition (transition-state fsm-spec prev-state action)]
-        (swap! state-atom assoc :current (:next transition))
-        (doseq [subscriber (get @state-atom :subscribers)]
-          (subscriber transition))
-        (swap! state-atom
-               (fn [state]
-                 (let [[status cleanup-effect] (run-effect! spec-atom this transition)]
-                   (-> (case status
-                         :updated (assoc state :cleanup-effect (when (fn? cleanup-effect)
-                                                                 cleanup-effect))
-                         state)))))
-        transition)))
+      (try
+        (when-let [transition (transition-state fsm-spec prev-state action)]
+          (swap! state-atom assoc :current (:next transition))
+          (doseq [subscriber (get @state-atom :subscribers)]
+            (subscriber transition))
+          (swap! state-atom
+                 (fn [state]
+                   (let [[status cleanup-effect] (run-effect! spec-atom this transition)]
+                     (-> (case status
+                           :updated (assoc state :cleanup-effect (when (fn? cleanup-effect)
+                                                                   cleanup-effect))
+                           state)))))
+          transition)
+        (catch :default error
+          (js/setTimeout #(throw error) 0)
+          nil))))
 
   (subscribe [this listener]
     (assert-alive this)
