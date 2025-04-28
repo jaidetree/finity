@@ -349,6 +349,12 @@
                :effect (parse-effect fsm-spec effect)}]
     (parse-state fsm-spec state)))
 
+(defn normalize-action
+  [action]
+  (if (keyword? action)
+    {:type action}
+    action))
+
 (defn parse-action
   "Validates an action matches a defined action validator
 
@@ -358,10 +364,7 @@
 
   Returns action hash-map"
   [fsm-spec action]
-  (let [action (if (keyword? action)
-                 {:type action}
-                 action)
-        validator (get-in fsm-spec [:validators :actions (:type action)])]
+  (let [validator (get-in fsm-spec [:validators :actions (:type action)])]
     (assert (fn? validator) (str "Action not defined, got " (pr-str action)))
     (v/parse validator action
              :message (fn [{:keys [errors]}]
@@ -410,9 +413,10 @@
   Returns a transition has-map with :prev state :next state and :action
   "
   [fsm-spec prev-state action]
-  (let [action (parse-action fsm-spec action)]
+  (let [action (normalize-action action)]
     (when-let [transition-entry (get-transition-entry fsm-spec prev-state action)]
-      (let [{:keys [reducer allowed-states]} transition-entry
+      (let [action (parse-action fsm-spec action)
+            {:keys [reducer allowed-states]} transition-entry
             action (assoc-in action [:meta :created-at] (js/Date.now))
             next-state (->> (reducer prev-state action)
                             (normalize-state)
@@ -511,14 +515,17 @@
               effect-validator (get-in spec [:validators :effects (:id next-effect)])
               effect-fn (get-in spec [:effects (:id next-effect)])]
           (assert (fn? effect-validator) (str "Effect undefined, got " (pr-str next-effect)))
-          (let [result (v/validate effect-validator next-effect)]
-            (if (v/valid? result)
-              [:updated (effect-fn {:fsm fsm
-                                    :state (:next transition)
-                                    :action (:action transition)
-                                    :effect next-effect
-                                    :dispatch #(dispatch fsm %)})]
-              (throw (js/Error. (str "Invalid effect " (v/errors->string (:errors result))))))))))))
+          (let [next-effect (v/parse effect-validator next-effect
+                                     :message
+                                     (fn [{:keys [errors]}]
+                                       (str "Invalid effect:\n"
+                                            (v/errors->string errors))))]
+
+            [:updated (effect-fn {:fsm fsm
+                                  :state (:next transition)
+                                  :action (:action transition)
+                                  :effect next-effect
+                                  :dispatch #(dispatch fsm %)})]))))))
 
 (defn destroyed?
   "Helper function to determine if a FSM instance was destroyed
@@ -551,6 +558,8 @@
     (assert-alive this)
     (let [prev-state @this
           fsm-spec @spec-atom]
+      #_(pprint {:fsm/id (:fsm/id fsm-spec)
+                 :action action})
       (try
         (when-let [transition (transition-state fsm-spec prev-state action)]
           (swap! state-atom assoc :current (:next transition))
