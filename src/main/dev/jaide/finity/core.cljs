@@ -522,7 +522,8 @@
                                             (v/errors->string errors))))]
 
             [:updated (effect-fn {:fsm fsm
-                                  :state (:next transition)
+                                  :state (get-in transition [:next :state])
+                                  :context (get-in transition [:next :context])
                                   :action (:action transition)
                                   :effect next-effect
                                   :dispatch #(dispatch fsm %)})]))))))
