@@ -1,6 +1,6 @@
 {
   "name": "finity",
-  "version": "2025.4.24",
+  "version": "2025.5.14",
   "description": "A ClojureScript FSM library",
   "main": "index.js",
   "engines": {

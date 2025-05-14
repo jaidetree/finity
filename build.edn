@@ -1,5 +1,5 @@
 {:lib dev.jaide/finity
- :version "2025.4.24-SNAPSHOT"
+ :version "2025.5.14-SNAPSHOT"
  :description "A ClojureScript Finite State Machine library focused on correctness and adaptability in modern stacks"
  :source-dirs ["src/main"]
  :licenses [{:name "GPL-3.0"
