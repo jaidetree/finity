@@ -31,7 +31,6 @@
     :initial     {:state nil
                   :context {}}
     :transitions {}
-    :cleanup-effect nil
     :effects     {}
     :validators  {:states {}
                   :actions default-actions
@@ -82,7 +81,7 @@
                             (v/record context-validator-map))
         validator (v/record {:state (v/literal id)
                              :context context-validator
-                             :effect (v/nilable (v/assert map?))})]
+                             :effects (v/nilable (v/assert map?))})]
     (swap! fsm-spec-ref assoc-in [:validators :states id] validator)
     fsm-spec-ref))
 
@@ -113,10 +112,10 @@
   fsm-spec-ref)
 
 (defn- effect-validator
-  [id v-map]
-  (v/record (-> {:id (v/literal id)}
-                (merge (when (map? v-map)
-                         v-map)))))
+  [v-map]
+  (if (map? v-map)
+    (v/record v-map)
+    (v/nilable (v/literal {}))))
 
 (defn effect
   "Defines a valid effect and validator
@@ -126,12 +125,14 @@
   - id - Keyword identifying the unique effect for example :start-timer
   - validator-hash-map - An optional hash-map of effect argument keywords to
                          valhalla compatible validation functions
-  - handler - Required function to receive a hash map with the following:
-    - :fsm - Instance of the fsm
-    - :state - Current state that was just transitioned to
-    - :action - Action that caused the transition
-    - :dispatch - Function to dispatch more actions
-    - :effect - The effect hash-map with {:id <id>} and possible args
+  - handler - Required function to receive two arguments:
+    - A hash-map with the following:
+      - :fsm - Instance of the fsm
+      - :state - Current state that was just transitioned to
+      - :action - Action that caused the transition
+      - :dispatch - Function to dispatch more actions
+    - The effect args hash-map
+
 
   The handler can optionally return a function to cleanup the side-effect such
   as removing a DOM listener.
@@ -147,7 +148,7 @@
    (assert (fn? handler) "Effect handler must be a function")
    (when (fn? (get-in @fsm-spec-ref [:validators :effects id]))
      (throw (js/Error. (str "Effect already defined for " (pr-str id)))))
-   (swap! fsm-spec-ref assoc-in [:validators :effects id] (effect-validator id validator-map))
+   (swap! fsm-spec-ref assoc-in [:validators :effects id] (effect-validator validator-map))
    (swap! fsm-spec-ref assoc-in [:effects id] handler)
    fsm-spec-ref))
 
@@ -195,7 +196,7 @@
                          (fn []
                            {:state f-or-kw
                             :context {}
-                            :effect nil})
+                            :effects {}})
                          f-or-kw)}))
     fsm-spec-ref))
 
@@ -223,17 +224,16 @@
 
   Arguments:
   - fsm-spec - An fsm-spec hash-map already derefed
-  - effect - A hash-map with :id keyword and arg attrs
+  - effect-id - A keyword pointing to a valid effect defined on the fsm-spec
+  - args - A hash-map with arg attrs
 
   Returns the parsed output of the effect validator
   "
-  [fsm-spec effect]
-  (when (some? effect)
-    (let [effect (if (keyword? effect) {:id effect} effect)]
-      (if-let [validator (get-in fsm-spec [:validators :effects (:id effect)])]
-        (v/parse validator effect)
-        (throw (js/Error. (str "Validator not found for effect, got "
-                               (pr-str effect))))))))
+  [fsm-spec effect-id args]
+  (if-let [validator (get-in fsm-spec [:validators :effects effect-id])]
+    (v/parse validator args)
+    (throw (js/Error. (str "Validator not found for effect, got "
+                           (pr-str effect))))))
 
 (defn initial
   "Set default initial state of fsm spec. Can be overwritten in atom-fsm
@@ -343,18 +343,24 @@
 
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
-  - state - A hash-map with :state state keyword and optional :context attr
-  - effect - Effect hash-map with :id and arg attrs, needs to match defined
-             effect validator
+  - opts - A hash-map with :state, optional :context, and optional :effects
+  
+  Options:
+  - state - Keyword representing the initial state
+  - context - Optional hash-map of context data associated with the state
+  - effects - Optional hash-map mapping effect-ids to args
 
-  Returns state hash-map with :state, :context, and :effect keys
+  Returns state hash-map with :state, :context, and :effects keys
   "
-  [fsm-spec-ref state & [effect]]
+  [fsm-spec-ref state]
   (assert-fsm-spec fsm-spec-ref)
   (let [fsm-spec  @fsm-spec-ref
         state {:state (:state state)
                :context (:context state)
-               :effect (parse-effect fsm-spec effect)}]
+               :effects (->> (:effects state)
+                             (map (fn [[effect-id args]]
+                                    [effect-id (parse-effect fsm-spec effect-id args)]))
+                             (into {}))}]
     (parse-state fsm-spec state)))
 
 (defn normalize-action
@@ -400,13 +406,13 @@
   (let [next-state (if (keyword? next-state)
                      {:state next-state}
                      next-state)
-        {:keys [state context effect]
-         :or {context {} effect nil}} next-state]
+        {:keys [state context effects]
+         :or {context {} effects nil}} next-state]
     {:state state
      :context context
-     :effect (if (keyword? effect)
-               {:id effect}
-               effect)}))
+     :effects (if (keyword? effects)
+                {effects {}}
+                effects)}))
 
 (defn transition-state
   "Perform a defined transition from one state to another with an action.
@@ -486,6 +492,25 @@
 
     Returns nil"))
 
+(defn- get-effect-fn
+  [fsm-spec effect-id]
+  (let [effect-fn (get-in fsm-spec [:effects effect-id])]
+    (assert (fn? effect-fn) (str "Could not run effect. Expected function, got " (pr-str effect-fn)))
+    effect-fn))
+
+(defn- run-effect!
+  [fsm-spec fsm transition effect-id args]
+  (let [effect-args (parse-effect fsm-spec effect-id args)
+        effect-fn (get-effect-fn fsm-spec effect-id)
+        cleanup-fn-or-nil (effect-fn {:fsm fsm
+                                      :dispatch #(dispatch fsm %)
+                                      :state (get-in transition [:next :state])
+                                      :context (get-in transition [:next :context])
+                                      :action (:action transition)}
+                                     effect-args)]
+    (when (fn? cleanup-fn-or-nil)
+      cleanup-fn-or-nil)))
+
 (defn run-effects!
   "Given a transition, cancel the previous effects and run the new effects
 
@@ -494,47 +519,45 @@
   - fsm - An instance of the IStateMachine protocol
   - transition - A transition hash-map with :next, :prev, and :action args
 
-  Returns a vector with a keyword like the following:
-  [:unchanged function-or-nil]
-  [:updated nil]
-  [:updated function]
+  Returns a hash-map mapping ids to a cleanup function or nil
   "
   [fsm-spec-ref fsm transition]
-  (let [cleanup-effect (-> fsm (internal-state) (:cleanup-effect))
-        prev-effect (get-in transition [:prev :effect])
-        next-effect (get-in transition [:next :effect])]
-    (cond
-      (= prev-effect next-effect)
-      [:unchanged cleanup-effect]
+  (let [cleanup-effects (get (internal-state fsm) :cleanup-effects)
+        [prev-effects next-effects] (->> [:prev :next]
+                                         (map #(get-in transition [% :effects])))
+        all-effect-ids (->> [cleanup-effects prev-effects next-effects]
+                            (mapcat keys)
+                            (set))
+        spec @fsm-spec-ref]
+    (loop [effect-ids all-effect-ids
+           next-cleanup-effects {}]
+      (let [[effect-id & remaining] effect-ids
+            next-effect (get next-effects effect-id)
+            prev-effect (get prev-effects effect-id)
+            cleanup-effect (get cleanup-effects effect-id)]
+        (cond
+          ;; Done iterating
+          (nil? effect-id)
+          next-cleanup-effects
 
-      (and (nil? next-effect) (fn? cleanup-effect))
-      (do
-        (cleanup-effect)
-        [:updated nil])
+          ;; Next-effect has changed from prev-effect
+          (and (some? next-effect) (not= next-effect prev-effect))
+          (do
+            (when (fn? cleanup-effect)
+              (cleanup-effect))
+            (recur remaining
+                   (assoc next-cleanup-effects effect-id
+                          (run-effect! spec fsm transition effect-id next-effect))))
 
-      (nil? next-effect)
-      [:updated nil]
+          ;; Previous effect and cleanup-fn
+          (and prev-effect (fn? cleanup-effect))
+          (do (cleanup-effect)
+              (recur remaining
+                     (assoc next-cleanup-effects effect-id nil)))
 
-      :else
-      (do
-        (when (fn? cleanup-effect)
-          (cleanup-effect))
-        (let [spec @fsm-spec-ref
-              effect-validator (get-in spec [:validators :effects (:id next-effect)])
-              effect-fn (get-in spec [:effects (:id next-effect)])]
-          (assert (fn? effect-validator) (str "Effect undefined, got " (pr-str next-effect)))
-          (let [next-effect (v/parse effect-validator next-effect
-                                     :message
-                                     (fn [{:keys [errors]}]
-                                       (str "Invalid effect:\n"
-                                            (v/errors->string errors))))]
-
-            [:updated (effect-fn {:fsm fsm
-                                  :state (get-in transition [:next :state])
-                                  :context (get-in transition [:next :context])
-                                  :action (:action transition)
-                                  :effect next-effect
-                                  :dispatch #(dispatch fsm %)})]))))))
+          :else
+          (recur remaining
+                 next-cleanup-effects))))))
 
 (defn destroyed?
   "Helper function to determine if a FSM instance was destroyed
@@ -561,7 +584,7 @@
 
   (internal-state [this]
     (assert-alive this)
-    @state-atom)
+    (:internal @state-atom))
 
   (dispatch [this action]
     (assert-alive this)
@@ -572,15 +595,13 @@
       (try
         (when-let [transition (transition-state fsm-spec prev-state action)]
           (swap! state-atom assoc :current (:next transition))
-          (doseq [subscriber (get @state-atom :subscribers)]
+          (doseq [subscriber (get-in @state-atom [:internal :subscribers])]
             (subscriber transition))
-          (swap! state-atom
-                 (fn [state]
-                   (let [[status cleanup-effect] (run-effects! spec-atom this transition)]
-                     (-> (case status
-                           :updated (assoc state :cleanup-effect (when (fn? cleanup-effect)
-                                                                   cleanup-effect))
-                           state)))))
+          (let [prev-effects (get-in transition [:prev :effects])
+                next-effects (get-in transition [:next :effects])]
+            (when (not= prev-effects next-effects)
+              (swap! state-atom assoc-in [:internal :cleanup-effects]
+                     (run-effects! spec-atom this transition))))
           transition)
         (catch :default error
           (js/setTimeout #(throw error) 0)
@@ -588,14 +609,14 @@
 
   (subscribe [this listener]
     (assert-alive this)
-    (swap! state-atom update :subscribers conj listener)
+    (swap! state-atom update-in [:internal :subscribers] conj listener)
     (fn unsubscribe
       []
-      (swap! state-atom update :subscribers disj listener)))
+      (swap! state-atom update-in [:internal :subscribers] disj listener)))
 
   (destroy [this]
     (assert-alive this)
-    (let [subscribers (get @state-atom :subscribers)
+    (let [subscribers (get (internal-state this) :subscribers)
           prev-state @this
           next-state {:state ::destroyed
                       :context {}
@@ -603,17 +624,18 @@
           transition (create-transition prev-state next-state :fsm/destroy)]
       ;; If an fsm implements a custom :fsm/destroy transition, this prevents
       ;; subscribers from getting double :fsm/destroy notifications 
-      (swap! state-atom assoc :subscribers #{})
+      (swap! state-atom assoc-in [:internal :subscribers] [])
       (dispatch this :fsm/destroy)
       ;; Give the fsm a chance to run some effects on destroy before disposing
-      (let [cleanup-effect (get @state-atom :cleanup-effect)]
+      (let [cleanup-effects (get (internal-state this) :cleanup-effects)]
         (swap! state-atom merge {:current next-state
-                                 :cleanup-effect nil
-                                 :subscribers #{}})
+                                 :internal {:cleanup-effects {}
+                                            :subscribers #{}}})
         (doseq [subscriber subscribers]
           (subscriber transition))
-        (when (fn? cleanup-effect)
-          (cleanup-effect))))
+        (doseq [[_ cleanup-effect] cleanup-effects]
+          (when (fn? cleanup-effect)
+            (cleanup-effect)))))
     this)
 
   IDeref
@@ -639,17 +661,20 @@
 
   Options:
   - initial - A valid initial state hash-map with :state, optional :context
-              and :effect attrs
+              and :effects attrs
 
   Returns an instance of FSMAtom
   "
-  [spec {:keys [initial effect atom]
+  [spec {:keys [initial atom]
          :or {atom atom}}]
   (doto (AtomFSM.
          spec
-         (atom {:current (init spec (merge {:context {}} (:initial @spec) initial) effect)
-                :cleanup-effect nil
-                :subscribers #{}}))
+         (atom {:current (init spec (merge {:context {}
+                                            :effects {}}
+                                           (:initial @spec)
+                                           initial))
+                :internal {:cleanup-effects {}
+                           :subscribers #{}}}))
     (dispatch :fsm/create)))
 
 (defn spec->diagram
