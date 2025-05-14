@@ -208,8 +208,8 @@
                   :initial   {:state :idle
                               :context {}
                                   ;; For example if wanting to start with an effect running
-                                   :effect {:id :fetch
-                                            :url "/api/tasks"}}
+                              :effect {:id :fetch
+                                       :url "/api/tasks"}}
 
                   :states  {:idle {}
                             :loading {:url (v/string)}
@@ -220,12 +220,12 @@
                             :reset {}
                             :error {:error (v/instance js/Error)}}
 
-                  :effects {:fetch [{:url (v/string)}
-                                    (fn [{:keys [dispatch effect]}]
-                                      (-> (js/fetch (:url effect))
-                                          (.then #(.json %))
-                                          (.then #(dispatch {:type :fetched :data %}))
-                                          (.catch #(dispatch {:type :error :error %}))))]}
+                  :effects {:fetch {:url (v/string)
+                                    :do (fn [{:keys [dispatch effect]}]
+                                          (-> (js/fetch (:url effect))
+                                              (.then #(.json %))
+                                              (.then #(dispatch {:type :fetched :data %}))
+                                              (.catch #(dispatch {:type :error :error %}))))}}
                   :transitions
                   [{:from [:idle]
                     :actions [:fetch]
@@ -463,10 +463,10 @@
                          :fetched {:tasks (v/vector task)}
                          :error {:error (v/instance js/Error.)}}
 
-               :effects {:fetch [{:url (v/string)}
-                                 (fn [{:keys [dispatch effect]}]
-                                   (dispatch {:type :fetched :tasks [{:id "test-id"
-                                                                      :title "Task Title"}]}))]}
+               :effects {:fetch {:args {:url (v/string)}
+                                 :do (fn [{:keys [dispatch effect]}]
+                                       (dispatch {:type :fetched :tasks [{:id "test-id"
+                                                                          :title "Task Title"}]}))}}
 
                :transitions
                [{:from [:empty]
@@ -497,11 +497,11 @@
               (is (= @fsm {:state :loading
                            :context {:url "https://example.com"}
                            :effect {:id :fetch :url "https://example.com"}})))
-          
+
             (catch :default error
               (js/console.error error)
               (throw error))))))
-    
+
     (testing "fails"
       (testing "action instead of actions"
         (let [task (v/record {:id (v/string)
@@ -519,10 +519,10 @@
                          :fetched {:tasks (v/vector task)}
                          :error {:error (v/instance js/Error.)}}
 
-               :effects {:fetch [{:url (v/string)}
-                                 (fn [{:keys [dispatch effect]}]
-                                   (dispatch {:type :fetched :tasks [{:id "test-id"
-                                                                      :title "Task Title"}]}))]}
+               :effects {:fetch {:args {:url (v/string)}
+                                 :do (fn [{:keys [dispatch effect]}]
+                                       (dispatch {:type :fetched :tasks [{:id "test-id"
+                                                                          :title "Task Title"}]}))}}
 
                :transitions
                [{:from [:empty]
@@ -545,7 +545,7 @@
                  :to :empty}]}]
           (try
             (is (thrown? :default (fsm/define spec)))
-          
+
             (catch :default error
               (js/console.error error)
               (throw error))))))))

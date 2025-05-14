@@ -268,12 +268,20 @@
       (action fsm-spec-ref id validator-map)))
   fsm-spec-ref)
 
+(defn- normalize-effect
+  [effect-fn-or-map]
+  (if (fn? effect-fn-or-map)
+    [{} effect-fn-or-map]
+    [(:args effect-fn-or-map)
+     (:do effect-fn-or-map)]))
+
 (defn- define-effects
   [fsm-spec-ref effects]
-  (doseq [[id [validator-map handler]] effects]
-    (if (= validator-map {})
-      (effect fsm-spec-ref id handler)
-      (effect fsm-spec-ref id validator-map handler)))
+  (doseq [[id effect-fn-or-map] effects]
+    (let [[validator-map handler] (normalize-effect effect-fn-or-map)]
+      (if (= validator-map {})
+        (effect fsm-spec-ref id handler)
+        (effect fsm-spec-ref id validator-map handler))))
   fsm-spec-ref)
 
 (defn- define-transitions
@@ -302,8 +310,8 @@
               :yellow {}}
      :actions {:change {}} ;; hash-map is a map of validators
      
-     :effects {:wait [{:delay (v/number)}
-                      (fn [] ...)}
+     :effects {:wait {:args {:delay (v/number)}
+                      :do (fn [] ...)}}
      :transitions
      [{:from [:red]
        :actions [:change]
@@ -478,8 +486,8 @@
 
     Returns nil"))
 
-(defn run-effect!
-  "Given a transition, cancel previous running effects and perform another effect
+(defn run-effects!
+  "Given a transition, cancel the previous effects and run the new effects
 
   Arguments:
   - fsm-spec-ref - An fsm-spec atom from the `create` function
@@ -568,7 +576,7 @@
             (subscriber transition))
           (swap! state-atom
                  (fn [state]
-                   (let [[status cleanup-effect] (run-effect! spec-atom this transition)]
+                   (let [[status cleanup-effect] (run-effects! spec-atom this transition)]
                      (-> (case status
                            :updated (assoc state :cleanup-effect (when (fn? cleanup-effect)
                                                                    cleanup-effect))

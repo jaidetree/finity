@@ -161,12 +161,12 @@ The define function works like the following:
                :reset {}
                :error {:error (v/instance js/Error)}}
 
-     :effects {:fetch [{:url (v/string)}
-                       (fn [{:keys [dispatch effect]}]
-                         (-> (js/fetch (:url effect))
-                             (.then #(.json %))
-                             (.then #(dispatch {:type :fetched :data %}))
-                             (.catch #(dispatch {:type :error :error %}))))]}
+     :effects {:fetch {:args {:url (v/string)}
+                       :do (fn [{:keys [dispatch effect]}]
+                             (-> (js/fetch (:url effect))
+                                 (.then #(.json %))
+                                 (.then #(dispatch {:type :fetched :data %}))
+                                 (.catch #(dispatch {:type :error :error %}))))]}}
      :transitions
      [{:from [:idle]
        :actions [:fetch]

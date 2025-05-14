@@ -16,10 +16,11 @@
 
 (def effects-validator
   (v/hash-map (v/keyword)
-              (v/vector-tuple [(v/union
-                                (v/literal {})
-                                validator-map)
-                               (v/assert fn?)])))
+              (v/union
+               (v/assert fn?)
+               (v/record
+                {:args (v/nilable validator-map)
+                 :do (v/assert fn?)}))))
 
 (def transitions-validator
   (v/vector
